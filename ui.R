@@ -66,7 +66,7 @@ body <- dashboardBody(
     # First tab content
     tabItem(tabName = "dashboard",
             fluidRow(
-              box(title = "Histogram", status = "primary", plotOutput("plot2", height = 250)),
+              box(title = "Histogram", status = "primary", plotOutput("plot1", height = 250)),
               
               box(
                 title = "Inputs", status = "warning",

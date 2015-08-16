@@ -1,159 +1,142 @@
 library(RSQLite)
 
-createTables <- function(dbName = 'nba_data.db') {
+create.tables <- function(db.name = 'folio_data.db') {
   
-  # Store dates as # days since '1970-01-01'
-  # Store repeated strings in separate lookup tables
-  
-  sql <- "CREATE TABLE IF NOT EXISTS season(
-          endYear INTEGER PRIMARY KEY,
-          regStart INTEGER,
-          postStart INTEGER,
-          allStar INTEGER
+  sql <- "CREATE TABLE IF NOT EXISTS Actions_Stock(
+            ID INTEGER PRIMARY KEY,
+            Timestamp INTEGER,
+            FOREIGN KEY(Stock) REFERENCES Stocks(ID),
+            Price NUMERIC,
+            Quantity NUMERIC,
+            Fees NUMERIC,
+            CashChange NUMERIC,
+            Purpose TEXT,
+            Notes TEXT
           );"
-  runQuery(sql, dbName)
+  run.query(sql, db.name)
   
-  sql <- "CREATE TABLE IF NOT EXISTS gameStatus(
-          id INTEGER PRIMARY KEY,
-          text TEXT
+  sql <- "CREATE TABLE IF NOT EXISTS Actions_Option(
+            ID INTEGER PRIMARY KEY,
+            Timestamp INTEGER,
+            FOREIGN KEY(Option) REFERENCES Options(ID)
+            Price NUMERIC,
+            Quantity NUMERIC,
+            Fees NUMERIC,
+            CashChange NUMERIC,
+            Purpose TEXT,
+            Notes TEXT
           );"
-  runQuery(sql, dbName)
+  run.query(sql, db.name)
   
-  sql <- "CREATE TABLE IF NOT EXISTS gameType(
-          id INTEGER PRIMARY KEY,
-          text TEXT
+  sql <- "CREATE TABLE IF NOT EXISTS Actions_Fund(
+            ID INTEGER PRIMARY KEY,
+            Timestamp INTEGER,
+            Method TEXT,
+            CashChange NUMERIC,
+            Notes TEXT
           );"
-  runQuery(sql, dbName)
+  run.query(sql, db.name)
   
-  sql <- "CREATE TABLE IF NOT EXISTS team(
-          id INTEGER PRIMARY KEY,
-          abbrev TEXT,
-          city TEXT
+  sql <- "CREATE TABLE IF NOT EXISTS Actions_Interest(
+            ID INTEGER PRIMARY KEY,
+            Timestamp INTEGER,
+            FOREIGN KEY(Underlying) REFERENCES Stocks(ID),
+            Type TEXT,
+            CashChange NUMERIC,
+            Notes TEXT
           );"
-  runQuery(sql, dbName)
+  run.query(sql, db.name)
   
-  sql <- "CREATE TABLE IF NOT EXISTS game(
-          id INTEGER PRIMARY KEY,
-          gameID TEXT,
-          gameCode TEXT,
-          season INTEGER,
-          date INTEGER,
-          status INTEGER,
-          homeTeam INTEGER,
-          awayTeam INTEGER,
-          periods INTEGER,
-          pointsHome INTEGER,
-          pointsAway INTEGER,
-          margin INTEGER,
-          type INTEGER,
-          FOREIGN KEY(season) REFERENCES season(endYear),
-          FOREIGN KEY(status) REFERENCES gameStatus(id),
-          FOREIGN KEY(homeTeam) REFERENCES team(id),
-          FOREIGN KEY(awayTeam) REFERENCES team(id),
-          FOREIGN KEY(type) REFERENCES gameType(id)
+  sql <- "CREATE TABLE IF NOT EXISTS Actions_Fee(
+            ID INTEGER PRIMARY KEY,
+            Timestamp INTEGER,
+            FOREIGN KEY(Underlying) REFERENCES Stocks(ID),
+            Type TEXT,
+            CashChange NUMERIC,
+            Notes TEXT
           );"
-  runQuery(sql, dbName)
+  run.query(sql, db.name)
+  
+  sql <- "CREATE TABLE IF NOT EXISTS Actions_Dividend(
+            ID INTEGER PRIMARY KEY,
+            Timestamp INTEGER,
+            FOREIGN KEY(Underlying) REFERENCES Stocks(ID),
+            CashChange NUMERIC,
+            Notes TEXT
+          );"
+  run.query(sql, db.name)
+  
+  sql <- "CREATE TABLE IF NOT EXISTS Stocks(
+            ID INTEGER PRIMARY KEY,
+            Ticker TEXT,
+            Name TEXT,
+            Quantity NUMERIC,
+            Volume NUMERIC,
+            Notes TEXT
+          );"
+  run.query(sql, db.name)
+  
+  sql <- "CREATE TABLE IF NOT EXISTS Options(
+            ID INTEGER PRIMARY KEY,
+            Name TEXT,
+            FOREIGN KEY(Underlying) REFERENCES Stocks(ID),
+            Type TEXT,
+            Expiration INTEGER,
+            Strike NUMERIC,
+            Quantity NUMERIC,
+            Volume NUMERIC,
+            Notes TEXT
+          );"
+  run.query(sql, db.name)
+  
+  sql <- "CREATE TABLE IF NOT EXISTS Funds(
+            ID INTEGER PRIMARY KEY,
+            Name TEXT,
+            Quantity NUMERIC,
+            Notes TEXT
+          );"
+  run.query(sql, db.name)
+  
 }
-# 
-# createActions <- function(dbName = 'nba_data.db') {
-#   sql <- "CREATE TABLE IF NOT EXISTS actions(
-#           gameID VARCHAR(255) NOT NULL, 
-#           action INT UNSIGNED, 
-#           detail INT UNSIGNED, 
-#           quarter INT UNSIGNED, 
-#           time VARCHAR(255), 
-#           actionHome VARCHAR(255), 
-#           actionNeutral VARCHAR(255), 
-#           actionAway VARCHAR(255), 
-#           score VARCHAR(255), 
-#           margin VARCHAR(255),
-#           FOREIGN KEY(gameID) REFERENCES games(gameID)
-#           );"
-#   runQuery(sql, dbName)
-# }
-# 
-# indexActions <- function(dbName = 'nba_data.db') {
-#   sql <- "CREATE INDEX IF NOT EXISTS gameIDIndex
-#           ON actions (gameID)"
-#   runQuery(sql, dbName)
-# }
-# 
-# createInstructions <- function(dbName = 'nba_data.db') {
-#   sql <- "CREATE TABLE IF NOT EXISTS instructions(
-#           action INT UNSIGNED, 
-#           detail INT UNSIGNED, 
-#           pattern VARCHAR(255), 
-#           lookup VARCHAR(255), 
-#           before TINYINT,
-#           after TINYINT,
-#           checkpoint TINYINT
-#           );"
-#   runQuery(sql, dbName)
-# }
-# 
-# createTimelines <- function(dbName = 'nba_data.db') {
-#   sql <- "CREATE TABLE IF NOT EXISTS timelines(
-#           gameID VARCHAR(255) NOT NULL,
-#           time INT UNSIGNED, 
-#           possession TINYINT,  
-#           margin TINYINT, 
-#           FOREIGN KEY(gameID) REFERENCES games(gameID)
-#           );"
-#   runQuery(sql, dbName)
-# }
-# 
-# indexTimelines <- function(dbName = 'nba_data.db') {
-#   sql <- "CREATE INDEX IF NOT EXISTS inputsIndex
-#           ON timelines (time, possession, margin, type)"
-#   runQuery(sql, dbName)
-# }
-# 
-# readActions <- function(gameID) {
-#   actions <- runQuery(paste('SELECT * ',
-#                             'FROM actions ',
-#                             'WHERE gameID = \'', gameID, 
-#                             '\';', sep = ''))
-#   return(actions)
-# }
 
-writeTable <- function(table, data, dbName = 'nba_data.db') {
-  connect <- dbConnect(drv = SQLite(), dbname = dbName)
+write.table <- function(table, data, db.name = 'folio_data.db') {
+  connect <- dbConnect(drv = SQLite(), dbname = db.name)
   dbWriteTable(connect, name = table, value = data, row.names = 0, append = TRUE)
   closeConnection(connect)
 }
 
-readTable <- function(table, dbName = 'nba_data.db') {
-  connect <- dbConnect(drv = SQLite(), dbname = dbName)
+read.table <- function(table, db.name = 'folio_data.db') {
+  connect <- dbConnect(drv = SQLite(), dbname = db.name)
   results <- dbReadTable(connect, name = table)
   closeConnection(connect)
   return(results)
 }
 
-removeTable <- function(table, dbName = 'nba_data.db') {
-  connect <- dbConnect(drv = SQLite(), dbname = dbName)
+remove.table <- function(table, db.name = 'folio_data.db') {
+  connect <- dbConnect(drv = SQLite(), dbname = db.name)
   dbRemoveTable(connect, name = table)
   closeConnection(connect)
 }
 
-listTables <- function(dbName = 'nba_data.db') {
-  connect <- dbConnect(drv = SQLite(), dbname = dbName)
+list.tables <- function(db.name = 'folio_data.db') {
+  connect <- dbConnect(drv = SQLite(), dbname = db.name)
   print(dbListTables(connect))
   closeConnection(connect)
 }
 
-listFields <- function(table, dbName = 'nba_data.db') {
-  connect <- dbConnect(drv = SQLite(), dbname = dbName)
+list.fields <- function(table, db.name = 'folio_data.db') {
+  connect <- dbConnect(drv = SQLite(), dbname = db.name)
   print(dbListFields(connect, name = table))
   closeConnection(connect)
 }
 
-runQuery <- function(sql, dbName = 'nba_data.db') {
-  connect <- dbConnect(drv = SQLite(), dbname = dbName)
+run.query <- function(sql, db.name = 'folio_data.db') {
+  connect <- dbConnect(drv = SQLite(), dbname = db.name)
   result <- tryCatch(dbGetQuery(connect, sql), finally = closeConnection(connect))
   return(result)
 }
 
-closeConnection <- function(connect) {
+close.connection <- function(connect) {
   sqliteCloseConnection(connect)
   sqliteCloseDriver(SQLite())
 }
