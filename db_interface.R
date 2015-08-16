@@ -14,7 +14,7 @@ create.tables <- function(db.name = 'folio_data.db') {
           );"
   dbGetQuery(conn, sql)
   
-  sql <- "CREATE TABLE IF NOT EXISTS Options_Stock(
+  sql <- "CREATE TABLE IF NOT EXISTS StockOptions(
             ID INTEGER PRIMARY KEY,
             Name TEXT,
             Underlying INTEGER,
@@ -30,14 +30,12 @@ create.tables <- function(db.name = 'folio_data.db') {
   
   sql <- "CREATE TABLE IF NOT EXISTS Funds(
             ID INTEGER PRIMARY KEY,
-            Name TEXT,
-            Quantity NUMERIC,
-            Notes TEXT
+            Quantity NUMERIC
           );"
   dbGetQuery(conn, sql)
   
-  sql <- "INSERT INTO Funds(Name, Quantity)
-          VALUES(\"Cash\", 0);"
+  sql <- "INSERT INTO Funds(Quantity)
+          VALUES(0);"
   dbGetQuery(conn, sql)
   
   sql <- "CREATE TABLE IF NOT EXISTS Actions_Stock(
@@ -54,7 +52,7 @@ create.tables <- function(db.name = 'folio_data.db') {
           );"
   dbGetQuery(conn, sql)
   
-  sql <- "CREATE TABLE IF NOT EXISTS Actions_Option(
+  sql <- "CREATE TABLE IF NOT EXISTS Actions_StockOption(
             ID INTEGER PRIMARY KEY,
             Timestamp INTEGER,
             Option INTEGER,
@@ -64,7 +62,7 @@ create.tables <- function(db.name = 'folio_data.db') {
             CashChange NUMERIC,
             Purpose TEXT,
             Notes TEXT,
-            FOREIGN KEY (Option) REFERENCES Options(ID)
+            FOREIGN KEY (Option) REFERENCES StockOptions(ID)
           );"
   dbGetQuery(conn, sql)
   
@@ -114,6 +112,14 @@ create.tables <- function(db.name = 'folio_data.db') {
 
 add.action.stock <- function(timestamp, ticker, price, quantity, fees, cash.change, purpose, notes, db.name = 'folio_data.db') {
   
+  # Make timestamp an integer if it isn't
+  timestamp <- as.numeric(timestamp)
+  
+  # If cash.change not supplied, just calculate it
+  if (missing(cash.change)) {
+    cash.change <- -1 * price * quantity - fees
+  }
+  
   conn <- dbConnect(drv = SQLite(), dbname = db.name)
   
   # Check if stock exists in stocks table
@@ -121,10 +127,10 @@ add.action.stock <- function(timestamp, ticker, price, quantity, fees, cash.chan
           "SELECT * FROM Stocks
            WHERE Ticker = \"", ticker, "\";"
          )
-  stock.row <- dbGetQuery(conn, sql)
+  asset.info <- dbGetQuery(conn, sql)
   
   # If stock doesn't exist, add it; else, update stock's quantity and volume
-  if (nrow(stock.row) == 0) {
+  if (nrow(asset.info) == 0) {
     sql <- paste0(
             "INSERT INTO Stocks(Ticker, Quantity, Volume)
              VALUES(
@@ -136,17 +142,17 @@ add.action.stock <- function(timestamp, ticker, price, quantity, fees, cash.chan
     dbGetQuery(conn, sql)
     
     sql <- "SELECT last_insert_rowid();"
-    stock.id <- dbGetQuery(conn, sql)[1, 1]
+    asset.id <- dbGetQuery(conn, sql)[1, 1]
   } else {
+    asset.id <- asset.info[1, 'ID']
+    
     sql <- paste0(
             "UPDATE Stocks
              SET Quantity = Quantity + ", quantity,
               ", Volume = Volume + ", abs(quantity),
-           " WHERE Ticker = \"", ticker, "\";"
+           " WHERE ID = ", asset.id, ";"
            )
     dbGetQuery(conn, sql)
-    
-    stock.id <- stock.row[1, 'ID']
   }
   
   # Add transaction into actions table
@@ -154,7 +160,7 @@ add.action.stock <- function(timestamp, ticker, price, quantity, fees, cash.chan
           "INSERT INTO Actions_Stock(Timestamp, Stock, Price, Quantity, Fees, CashChange)
            VALUES(",
               timestamp, ", ",
-              stock.id, ", ",
+              asset.id, ", ",
               price, ", ",
               quantity, ", ",
               fees, ", ",
@@ -189,8 +195,175 @@ add.action.stock <- function(timestamp, ticker, price, quantity, fees, cash.chan
   sql <- paste0(
           "UPDATE Funds
            SET Quantity = Quantity + ", cash.change,
-         " WHERE Name = \"Cash\";"
+         " WHERE ID = 1;"
          )
+  dbGetQuery(conn, sql)
+  
+  dbDisconnect(conn)
+}
+
+add.action.stock.option <- function(timestamp, underlying, type, expiration, strike, price, quantity, fees, cash.change, purpose, notes, db.name = 'folio_data.db') {
+  
+  # Make option name
+  name <- paste0(
+            underlying, 
+            format(expiration, '%y%m%d'), 
+            substr(type, 0, 1),
+            gsub("\\.", "", sprintf("%09.03f", 120))
+          )
+  
+  # Make timestamp an integer if it isn't
+  timestamp <- as.numeric(timestamp)
+  
+  # If cash.change not supplied, just calculate it
+  if (missing(cash.change)) {
+    cash.change <- -1 * price * quantity - fees
+  }
+  
+  conn <- dbConnect(drv = SQLite(), dbname = db.name)
+  
+  # Check if underlying exists in underlying table
+  sql <- paste0(
+          "SELECT * FROM Stocks
+           WHERE Ticker = \"", underlying, "\";"
+         )
+  underlying.info <- dbGetQuery(conn, sql)
+  
+  # If underlying doesn't exist, add it
+  if (nrow(underlying.info) == 0) {
+    sql <- paste0(
+            "INSERT INTO Stocks(Ticker, Quantity, Volume)
+             VALUES(\"", ticker, "\", 0, 0);"
+           )
+    dbGetQuery(conn, sql)
+    
+    sql <- "SELECT last_insert_rowid();"
+    underlying.id <- dbGetQuery(conn, sql)[1, 1]
+  } else {
+    underlying.id <- underlying.info[1, 'ID']
+  }
+  
+  # Check if stock option exists in stock options table
+  sql <- paste0(
+          "SELECT * FROM StockOptions
+           WHERE Name = \"", name, "\";"
+         )
+  asset.info <- dbGetQuery(conn, sql)
+  
+  # If stock option doesn't exist, add it; else, update stock option's quantity and volume
+  if (nrow(asset.info) == 0) {
+    sql <- paste0(
+            "INSERT INTO StockOptions(Name, Underlying, Type, Expiration, Strike, Quantity, Volume)
+             VALUES(
+                \"", name, "\", ",
+                underlying.id, ", ",
+                "\"", type, "\", ",
+                expiration, ", ",
+                strike, ", ",
+                quantity, ", ",
+                quantity, ", ",
+            ");"
+           )
+    dbGetQuery(conn, sql)
+    
+    sql <- "SELECT last_insert_rowid();"
+    asset.id <- dbGetQuery(conn, sql)[1, 1]
+  } else {
+    asset.id <- asset.info[1, 'ID']
+    
+    sql <- paste0(
+            "UPDATE StockOptions
+             SET Quantity = Quantity + ", quantity,
+              ", Volume = Volume + ", abs(quantity),
+           " WHERE Name = \"", name, "\";"
+           )
+    dbGetQuery(conn, sql)
+  }
+  
+  # Add transaction into actions table
+  sql <- paste0(
+          "INSERT INTO Actions_StockOption(Timestamp, Option, Price, Quantity, Fees, CashChange)
+           VALUES(",
+              timestamp, ", ",
+              asset.id, ", ",
+              price, ", ",
+              quantity, ", ",
+              fees, ", ",
+              cash.change,
+          ");"
+         )
+  dbGetQuery(conn, sql)
+  
+  sql <- "SELECT last_insert_rowid();"
+  action.id <- dbGetQuery(conn, sql)[1, 1]
+  
+  # Add purpose and notes if they exist
+  if (!missing(purpose)) {
+    sql <- paste0(
+            "UPDATE Actions_StockOption
+             SET Purpose = \"", purpose, "\",
+             WHERE ID = ", action.id, ";"
+           )
+    dbGetQuery(conn, sql)
+  }
+  
+  if (!missing(notes)) {
+    sql <- paste0(
+            "UPDATE Actions_StockOption
+             SET Notes = \"", notes, "\",
+             WHERE ID = ", action.id, ";"
+           )
+    dbGetQuery(conn, sql)
+  }
+  
+  # Update funds
+  sql <- paste0(
+          "UPDATE Funds
+           SET Quantity = Quantity + ", cash.change,
+         " WHERE ID = 1;"
+         )
+  dbGetQuery(conn, sql)
+  
+  dbDisconnect(conn)
+}
+
+add.action.fund <- function(timestamp, method, cash.change, notes, db.name = 'folio_data.db') {
+  
+  # Make timestamp an integer if it isn't
+  timestamp <- as.numeric(timestamp)
+  
+  conn <- dbConnect(drv = SQLite(), dbname = db.name)
+  
+  # Add transaction into actions table
+  sql <- paste0(
+          "INSERT INTO Actions_Fund(Timestamp, Method, CashChange)
+           VALUES(",
+              timestamp, ", ",
+              "\"", method, "\", ",
+              cash.change,
+          ");"
+         )
+  dbGetQuery(conn, sql)
+  
+  sql <- "SELECT last_insert_rowid();"
+  action.id <- dbGetQuery(conn, sql)[1, 1]
+  
+  # Add notes if they are there
+  if (!missing(notes)) {
+    sql <- paste0(
+            "UPDATE Actions_Fund
+             SET Notes = \"", notes, "\",
+             WHERE ID = ", action.id, ";"
+    )
+    dbGetQuery(conn, sql)
+  }
+  
+  # Update funds
+  sql <- paste0(
+          "UPDATE Funds
+           SET Quantity = Quantity + ", cash.change,
+         " WHERE ID = 1;"
+  )
   dbGetQuery(conn, sql)
   
   dbDisconnect(conn)
