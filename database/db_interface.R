@@ -1,111 +1,195 @@
-library(RSQLite)
+source('./database/db_management.R')
 
-GetStockInfo <- function(ticker, timestamp, information = 'Assets', db.name = 'folio_data.db') {
+GetStocks <- function(ticker, name, quantity, volume, notes) {
   
-  conn <- dbConnect(drv = SQLite(), dbname = db.name)
+  sql <- "SELECT * FROM Stocks"
   
-  # First get the asset info so we can get the stock's ID
-  sql <- paste0(
-          "SELECT * FROM Stocks
-           WHERE Ticker = \"", ticker, "\";"
-         )
-  asset.info <- dbGetQuery(conn, sql)
+  # Conditions will contain each WHERE clause
+  conditions <- c()
   
-  # If the stock doesn't exist in our assets table, it won't exist elsewhere
-  if (nrow(asset.info) == 0) {
-    return(NA)
+  # Go through each parameter and add a clause if necessary
+  if (!missing(ticker)) {
+    conditions <- c(conditions, paste0("Ticker IN ('", paste(ticker, collapse = "\', \'"), "')"))
+  }
+  
+  if (!missing(name)) {
+    conditions <- c(conditions, paste0("Name IN ('", paste(name, collapse = "\', \'"), "')"))
+  }
+  
+  if (!missing(quantity)) {
+    if (quantity == 'positive') {
+      conditions <- c(conditions, "Quantity > 0")
+    } else if (quantity == 'negative') {
+      conditions <- c(conditions, "Quantity < 0")
+    } else if (quantity == 'nonzero') {
+      conditions <- c(conditions, "Quantity != 0")
+    }
+  }
+  
+  if (!missing(volume)) {
+    if (volume == 'positive') {
+      conditions <- c(conditions, "Volume > 0")
+    } else {
+      conditions <- c(conditions, paste0("Volume >= ", volume))
+    }
+  }
+  
+  if (!missing(notes)) {
+    conditions <- c(conditions, paste0("Notes LIKE \"", notes, "\""))
+  }
+  
+  # Create full sql statement by collapsing conditions
+  if (length(conditions) > 0) {
+    sql <- paste0(sql, " WHERE ", paste(conditions, collapse = " AND "), ";")
   } else {
-    id <- asset.info[1, 'ID']
+    sql <- paste0(sql, ";")
   }
   
-  # Use the stock's ID to get its info in other tables
-  if (information == 'Assets') {
-    return(asset.info)
-  } else if (information == 'Values') {
-    sql <- paste0(
-            "SELECT * FROM Values_Stock
-             WHERE Stock = ", id, ";"
-           )
-    return(dbGetQuery(conn, sql))
-  } else if (information == 'Actions') {
-    sql <- paste0(
-            "SELECT * FROM Actions_Stock
-             WHERE Stock = ", id, ";"
-           )
-    return(dbGetQuery(conn, sql))
-  }
-  
-  dbDisconnect(conn)
+  return(RunQuery(sql))
 }
 
-UpdateStock <- function(ticker, quantity, name, notes, db.name = 'folio_data.db') {
+UpdateStock <- function(ticker, name, quantity, notes, action = 'add') {
   
-  stock.info <- GetStockInfo(ticker)
+  stock.info <- GetStocks(ticker)
   
-  conn <- dbConnect(drv = SQLite(), dbname = db.name)
+  sql <- "INSERT OR REPLACE INTO Stocks("
+  parameters <- "Ticker, Quantity, Volume"
+  values <- paste0("VALUES(\"", ticker, "\"")
   
   # If quantity not included, just set it to 0
   if (missing(quantity)) {
     quantity <- 0
   }
   
-  # Update quantity and volume information
-  if (nrow(stock.info) == 0) {
-    sql <- paste0(
-            "INSERT INTO Stocks(Ticker, Quantity, Volume)
-             VALUES(
-              \"", ticker, "\", ", 
-              quantity, ", ", 
-              abs(quantity), 
-            ");"
-           )
-    dbGetQuery(conn, sql)
-    
-    # Get ID of the stock we just inserted
-    sql <- "SELECT last_insert_rowid();"
-    asset.id <- dbGetQuery(conn, sql)[1, 1]
+  if (action == 'delete') {
+    volume <- -abs(quantity)
   } else {
-    sql <- paste0(
-            "UPDATE Stocks
-             SET Quantity = Quantity + ", quantity, ", 
-                 Volume = Volume + ", abs(quantity), "
-             WHERE Ticker = ", ticker, ";"
-           )
-    dbGetQuery(conn, sql)
-    
-    asset.id <- stock.info[1, 'ID']
+    volume <- abs(quantity)
   }
+  
+  values <- paste0(values, ",
+              COALESCE((SELECT Quantity FROM Stocks WHERE Ticker = \"", ticker, "\"), 0) + ", quantity, ",
+              COALESCE((SELECT Volume FROM Stocks WHERE Ticker = \"", ticker, "\"), 0) + ", volume)
   
   # Add name and notes if they were supplied
   if (!missing(name)) {
-    sql <- paste0(
-            "UPDATE Actions_Stock
-             SET Name = \"", name, "\",
-             WHERE Ticker = ", ticker, ";"
-           )
-    dbGetQuery(conn, sql)
+    parameters <- paste0(parameters, ", Name")
+    values <- paste0(values, ", \"", name, "\"")
   }
   
   if (!missing(notes)) {
-    sql <- paste0(
-            "UPDATE Actions_Stock
-             SET Notes = \"", notes, "\",
-             WHERE Ticker = ", ticker, ";"
-           )
-    dbGetQuery(conn, sql)
+    parameters <- paste0(parameters, ", Notes")
+    values <- paste0(values, ", \"", notes, "\"")
   }
   
-  dbDisconnect(conn)
-  
-  # Return asset.id just in case it's needed
-  return(asset.id)
+  sql <- paste0(sql, parameters, ") ", values, ");")
+  RunQuery(sql)
 }
 
-UpdateActionStock <- function(timestamp, ticker, price, quantity, fees, cash.change, purpose, notes, db.name = 'folio_data.db') {
+GetActionsStock <- function(id, timestamp, ticker, price, quantity, cash.change, purpose, notes) {
   
-  action.stock.info <- GetStockInfo(ticker)
+  sql <- "SELECT * FROM Actions_Stock"
+  
+  # Conditions will contain each WHERE clause
+  conditions <- c()
+  
+  # Go through each parameter and add a clause if necessary
+  if (!missing(id)) {
+    conditions <- c(conditions, paste0("ID = ", id))
+  }
+  
+  if (!missing(timestamp)) {
+    timestamp <- as.numeric(timestamp)
+    conditions <- c(conditions, paste0("Timestamp >= ", timestamp[1]))
+    if (length(timestamp) == 2) {
+      conditions <- c(conditions, paste0("Timestamp <= ", timestamp[2]))
+    }
+  }
+  
+  if (!missing(ticker)) {
+    stock.info <- GetStocks(ticker)
+    conditions <- c(conditions, paste0("Stock IN (", paste(stock.info$ID, collapse = ", "), ")"))
+  }
+  
+  if (!missing(price)) {
+    conditions <- c(conditions, paste0("Price >= ", price[1]))
+    if (length(price) == 2) {
+      conditions <- c(conditions, paste0("Price <= ", price[2]))
+    }
+  }
+  
+  if (quantity == 'positive') {
+    conditions <- c(conditions, "Quantity > 0")
+  } else if (quantity == 'negative') {
+    conditions <- c(conditions, "Quantity < 0")
+  } else if (quantity == 'nonzero') {
+    conditions <- c(conditions, "Quantity != 0")
+  }
+  
+  if (!missing(cash.change)) {
+    conditions <- c(conditions, paste0("CashChange >= ", cash.change[1]))
+    if (length(cash.change) == 2) {
+      conditions <- c(conditions, paste0("CashChange <= ", cash.change[2]))
+    }
+  }
+  
+  if (!missing(purpose)) {
+    conditions <- c(conditions, paste0("Purpose LIKE \"", purpose, "\""))
+  }
+  
+  if (!missing(notes)) {
+    conditions <- c(conditions, paste0("Notes LIKE \"", notes, "\""))
+  }
+  
+  # Create full sql statement by collapsing conditions
+  if (length(conditions) > 0) {
+    sql <- paste0(sql, " WHERE ", paste(conditions, collapse = " AND "), ";")
+  } else {
+    sql <- paste0(sql, ";")
+  }
+  
+  return(RunQuery(sql))
+}
+
+DeleteActionsStock <- function(id) {
+  action.info <- GetActionsStock(id)
+  
+  # Undo change to funds
+  UpdateFunds(-action.info[1, 'CashChange'])
+  
+  # Undo change to stock position and volume
+  UpdateStock(ticker = action.info[1, 'ticker'])
+  
+}
+
+UpdateActionsStock <- function(id, timestamp, ticker, price, quantity, fees, cash.change, purpose, notes) {
+  
+  stock.info <- GetStocks(ticker)
   
   conn <- dbConnect(drv = SQLite(), dbname = db.name)
+  
+  if (!missing(id)) {
+    
+    action.info <- GetActionsStock(id)
+    sql <- "UPDATE Actions_Stock SET"
+    
+    # Conditions will contain each WHERE clause
+    conditions <- c()
+    
+    if (!missing(ticker)) {
+      
+    }
+    
+    if ()
+  }
+  
+  # Make timestamp an integer if it isn't
+  timestamp <- as.numeric(timestamp)
+  
+  # If cash.change not supplied, just calculate it
+  if (missing(cash.change)) {
+    cash.change <- -1 * price * quantity - fees
+  }
   
   # If quantity not included, just set it to 0
   if (missing(quantity)) {
@@ -126,7 +210,7 @@ UpdateActionStock <- function(timestamp, ticker, price, quantity, fees, cash.cha
     
     # Get ID of the stock we just inserted
     sql <- "SELECT last_insert_rowid();"
-    asset.id <- dbGetQuery(conn, sql)[1, 1]
+    stock.id <- dbGetQuery(conn, sql)[1, 1]
   } else {
     sql <- paste0(
       "UPDATE Stocks
@@ -136,13 +220,13 @@ UpdateActionStock <- function(timestamp, ticker, price, quantity, fees, cash.cha
     )
     dbGetQuery(conn, sql)
     
-    asset.id <- stock.info[1, 'ID']
+    stock.id <- stock.info[1, 'ID']
   }
   
   # Add name and notes if they were supplied
   if (!missing(name)) {
     sql <- paste0(
-      "UPDATE Actions_Stock
+      "UPDATE Stocks
       SET Name = \"", name, "\",
       WHERE Ticker = ", ticker, ";"
     )
@@ -151,7 +235,7 @@ UpdateActionStock <- function(timestamp, ticker, price, quantity, fees, cash.cha
   
   if (!missing(notes)) {
     sql <- paste0(
-      "UPDATE Actions_Stock
+      "UPDATE Stocks
       SET Notes = \"", notes, "\",
       WHERE Ticker = ", ticker, ";"
     )
@@ -160,12 +244,27 @@ UpdateActionStock <- function(timestamp, ticker, price, quantity, fees, cash.cha
   
   dbDisconnect(conn)
   
-  # Return asset.id just in case it's needed
-  return(asset.id)
+  # Return stock.id just in case it's needed
+  return(stock.id)
 }
 
+GetFunds <- function() {
+  sql <- "SELECT * FROM Funds"
+  return(RunQuery(sql)[1, 'Quantity'])
+}
 
-UpdateActionStock <- function(timestamp, ticker, price, quantity, fees, cash.change, purpose, notes, db.name = 'folio_data.db') {
+UpdateFunds <- function(quantity) {
+  sql <- paste0(
+          "UPDATE Funds
+           SET Quantity = Quantity + ", quantity, "
+           WHERE ID = 1"
+         )
+  RunQuery(sql)
+}
+
+# Outdated
+
+UpdateActionsStock <- function(timestamp, ticker, price, quantity, fees, cash.change, purpose, notes) {
   
   # Make timestamp an integer if it isn't
   timestamp <- as.numeric(timestamp)
@@ -229,7 +328,7 @@ UpdateActionStock <- function(timestamp, ticker, price, quantity, fees, cash.cha
   dbDisconnect(conn)
 }
 
-add.action.stock.option <- function(timestamp, underlying, type, expiration, strike, price, quantity, fees, cash.change, purpose, notes, db.name = 'folio_data.db') {
+add.action.stock.option <- function(timestamp, underlying, type, expiration, strike, price, quantity, fees, cash.change, purpose, notes) {
   
   # Make option name
   name <- paste0(
@@ -354,7 +453,7 @@ add.action.stock.option <- function(timestamp, underlying, type, expiration, str
   dbDisconnect(conn)
 }
 
-add.action.fund <- function(timestamp, method, cash.change, notes, db.name = 'folio_data.db') {
+add.action.fund <- function(timestamp, method, cash.change, notes) {
   
   # Make timestamp an integer if it isn't
   timestamp <- as.numeric(timestamp)

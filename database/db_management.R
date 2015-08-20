@@ -1,8 +1,7 @@
 library(RSQLite)
+db.name <- './database/folio_data.db'
 
-CreateTables <- function(db.name = 'folio_data.db') {
-  
-  conn <- dbConnect(drv = SQLite(), dbname = db.name)
+CreateTables <- function() {
   
   # Table types:
   # 1) Assets - show name, id, quantity 
@@ -17,7 +16,7 @@ CreateTables <- function(db.name = 'folio_data.db') {
             Volume NUMERIC,
             Notes TEXT
           );"
-  dbGetQuery(conn, sql)
+  RunQuery(sql)
   
   sql <- "CREATE TABLE IF NOT EXISTS StockOptions(
             ID INTEGER PRIMARY KEY,
@@ -31,17 +30,17 @@ CreateTables <- function(db.name = 'folio_data.db') {
             Notes TEXT,
             FOREIGN KEY (Underlying) REFERENCES Stocks(ID)
           );"
-  dbGetQuery(conn, sql)
+  RunQuery(sql)
   
   sql <- "CREATE TABLE IF NOT EXISTS Funds(
             ID INTEGER PRIMARY KEY,
             Quantity NUMERIC
           );"
-  dbGetQuery(conn, sql)
+  RunQuery(sql)
   
-  sql <- "INSERT ON CONFLICT IGNORE INTO Funds(Quantity)
-          VALUES(0);"
-  dbGetQuery(conn, sql)
+  sql <- "INSERT OR IGNORE INTO Funds(ID, Quantity)
+          VALUES(1, 0);"
+  RunQuery(sql)
   
   sql <- "CREATE TABLE IF NOT EXISTS Values_Stock(
             ID INTEGER PRIMARY KEY,
@@ -52,7 +51,7 @@ CreateTables <- function(db.name = 'folio_data.db') {
             Notes TEXT,
             FOREIGN KEY (Stock) REFERENCES Stocks(ID)
           );"
-  dbGetQuery(conn, sql)
+  RunQuery(sql)
   
   sql <- "CREATE TABLE IF NOT EXISTS Values_StockOption(
             ID INTEGER PRIMARY KEY,
@@ -63,7 +62,7 @@ CreateTables <- function(db.name = 'folio_data.db') {
             Notes TEXT,
             FOREIGN KEY (Option) REFERENCES StockOptions(ID)
           );"
-  dbGetQuery(conn, sql)
+  RunQuery(sql)
   
   sql <- "CREATE TABLE IF NOT EXISTS Values_Portfolio(
             ID INTEGER PRIMARY KEY,
@@ -74,7 +73,7 @@ CreateTables <- function(db.name = 'folio_data.db') {
             Source TEXT,
             Notes TEXT
           );"
-  dbGetQuery(conn, sql)
+  RunQuery(sql)
   
   sql <- "CREATE TABLE IF NOT EXISTS Actions_Stock(
             ID INTEGER PRIMARY KEY,
@@ -88,7 +87,7 @@ CreateTables <- function(db.name = 'folio_data.db') {
             Notes TEXT,
             FOREIGN KEY (Stock) REFERENCES Stocks(ID)
           );"
-  dbGetQuery(conn, sql)
+  RunQuery(sql)
   
   sql <- "CREATE TABLE IF NOT EXISTS Actions_StockOption(
             ID INTEGER PRIMARY KEY,
@@ -102,7 +101,7 @@ CreateTables <- function(db.name = 'folio_data.db') {
             Notes TEXT,
             FOREIGN KEY (Option) REFERENCES StockOptions(ID)
           );"
-  dbGetQuery(conn, sql)
+  RunQuery(sql)
   
   sql <- "CREATE TABLE IF NOT EXISTS Actions_Fund(
             ID INTEGER PRIMARY KEY,
@@ -111,7 +110,7 @@ CreateTables <- function(db.name = 'folio_data.db') {
             CashChange NUMERIC,
             Notes TEXT
           );"
-  dbGetQuery(conn, sql)
+  RunQuery(sql)
   
   sql <- "CREATE TABLE IF NOT EXISTS Actions_Interest(
             ID INTEGER PRIMARY KEY,
@@ -122,7 +121,7 @@ CreateTables <- function(db.name = 'folio_data.db') {
             Notes TEXT,
             FOREIGN KEY (Underlying) REFERENCES Stocks(ID)
           );"
-  dbGetQuery(conn, sql)
+  RunQuery(sql)
   
   sql <- "CREATE TABLE IF NOT EXISTS Actions_Fee(
             ID INTEGER PRIMARY KEY,
@@ -133,7 +132,7 @@ CreateTables <- function(db.name = 'folio_data.db') {
             Notes TEXT,
             FOREIGN KEY (Underlying) REFERENCES Stocks(ID)
           );"
-  dbGetQuery(conn, sql)
+  RunQuery(sql)
   
   sql <- "CREATE TABLE IF NOT EXISTS Actions_Dividend(
             ID INTEGER PRIMARY KEY,
@@ -143,43 +142,41 @@ CreateTables <- function(db.name = 'folio_data.db') {
             Notes TEXT,
             FOREIGN KEY (Underlying) REFERENCES Stocks(ID)
           );"
-  dbGetQuery(conn, sql)
-  
-  dbDisconnect(conn)
+  RunQuery(sql)
 }
 
-WriteTable <- function(table, data, db.name = 'folio_data.db') {
+WriteTable <- function(table, data) {
   conn <- dbConnect(drv = SQLite(), dbname = db.name)
   dbWriteTable(conn, name = table, value = data, row.names = 0, append = TRUE)
   dbDisconnect(conn)
 }
 
-ReadTable <- function(table, db.name = 'folio_data.db') {
+ReadTable <- function(table) {
   conn <- dbConnect(drv = SQLite(), dbname = db.name)
   results <- dbReadTable(conn, name = table)
   dbDisconnect(conn)
   return(results)
 }
 
-RemoveTable <- function(table, db.name = 'folio_data.db') {
+RemoveTable <- function(table) {
   conn <- dbConnect(drv = SQLite(), dbname = db.name)
   dbRemoveTable(conn, name = table)
   dbDisconnect(conn)
 }
 
-ListTables <- function(db.name = 'folio_data.db') {
+ListTables <- function() {
   conn <- dbConnect(drv = SQLite(), dbname = db.name)
   print(dbListTables(conn))
   dbDisconnect(conn)
 }
 
-ListFields <- function(table, db.name = 'folio_data.db') {
+ListFields <- function(table) {
   conn <- dbConnect(drv = SQLite(), dbname = db.name)
   print(dbListFields(conn, name = table))
   dbDisconnect(conn)
 }
 
-RunQuery <- function(sql, db.name = 'folio_data.db') {
+RunQuery <- function(sql) {
   conn <- dbConnect(drv = SQLite(), dbname = db.name)
   result <- tryCatch(dbGetQuery(conn, sql), finally = dbDisconnect(conn))
   return(result)
