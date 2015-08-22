@@ -1,3 +1,4 @@
+library(quantmod)
 source('./database/db_management.R')
 
 GetStocks <- function(ticker, name, quantity, volume, notes) {
@@ -49,9 +50,9 @@ GetStocks <- function(ticker, name, quantity, volume, notes) {
   return(RunQuery(sql))
 }
 
-UpdateStock <- function(ticker, name, quantity, notes, action = 'add') {
+UpdateStock <- function(ticker, name, price, quantity, notes, action = 'add') {
   
-  sql <- "INSERT OR REPLACE INTO Stocks(ID, Ticker, Quantity, Volume, Name, Notes) "
+  sql <- "INSERT OR REPLACE INTO Stocks(ID, Ticker, Quantity, Volume, Name, Price, Notes) "
   values <- paste0("VALUES((SELECT ID FROM Stocks WHERE Ticker = \"", ticker, "\"), \"", ticker, "\"")
   
   # If quantity not included, just set it to 0
@@ -71,11 +72,17 @@ UpdateStock <- function(ticker, name, quantity, notes, action = 'add') {
               COALESCE((SELECT Quantity FROM Stocks WHERE Ticker = \"", ticker, "\"), 0) + ", quantity, ",
               COALESCE((SELECT Volume FROM Stocks WHERE Ticker = \"", ticker, "\"), 0) + ", volume)
   
-  # Add name and notes if they were supplied
+  # Add name, price, and notes if they were supplied
   if (!missing(name)) {
     values <- paste0(values, ", \"", name, "\"")
   } else {
     values <- paste0(values, ", (SELECT Name FROM Stocks WHERE Ticker = \"", ticker, "\")")
+  }
+  
+  if (!missing(price)) {
+    values <- paste0(values, ", ", price)
+  } else {
+    values <- paste0(values, ", (SELECT Price FROM Stocks WHERE Ticker = \"", ticker, "\")")
   }
   
   if (!missing(notes)) {
@@ -86,6 +93,38 @@ UpdateStock <- function(ticker, name, quantity, notes, action = 'add') {
   
   sql <- paste0(sql, values, ");")
   RunQuery(sql)
+}
+
+UpdateStockPrices <- function() {
+  sql <- "SELECT Ticker FROM Stocks;"
+  tickers <- paste(RunQuery(sql)$Ticker, collapse = ";")
+  
+  # Get current VWAP if exists, else just get Last Trade Price
+  results <- getQuote(tickers, what = yahooQF(c("Name", "Last Trade (Price Only)", "Bid Size", "Bid", "Ask", "Ask Size")))
+  results$VWAP <- (results$Bid * results$`Ask Size` + results$Ask * results$`Bid Size`) / (results$`Ask Size` + results$`Bid Size`)
+  results$Price <- results$VWAP
+  results[which(is.na(results$Price)), 'Price'] <- results[which(is.na(results$Price)), 'Last']
+  
+  # Clean up data frame
+  results$Price <- round(results$Price, digits = 2)
+  results$Ticker <- row.names(results)
+  results <- results[, c('Ticker', 'Name', 'Price')]
+  
+  # Create temp table; join tables to update price and name; then remove table
+  WriteTable("Temp", results)
+  
+  sql <- "UPDATE Stocks
+          SET Name = (SELECT Name
+                      FROM temp
+                      WHERE Stocks.Ticker = Temp.Ticker),
+              Price = (SELECT Price
+                       FROM temp
+                       WHERE Stocks.Ticker = Temp.Ticker)
+          WHERE Ticker IN (SELECT Ticker
+                           FROM Temp);"
+  RunQuery(sql)
+  
+  RemoveTable("Temp")
 }
 
 GetActionsStock <- function(id, timestamp, ticker, price, quantity, cash.change, purpose, notes) {

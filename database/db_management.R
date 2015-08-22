@@ -12,6 +12,7 @@ CreateTables <- function() {
             ID INTEGER PRIMARY KEY,
             Ticker TEXT UNIQUE,
             Name TEXT,
+            Price NUMERIC,
             Quantity NUMERIC,
             Volume NUMERIC,
             Notes TEXT
@@ -25,6 +26,7 @@ CreateTables <- function() {
             Type TEXT,
             Expiration INTEGER,
             Strike NUMERIC,
+            Price NUMERIC,
             Quantity NUMERIC,
             Volume NUMERIC,
             Notes TEXT,
